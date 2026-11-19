@@ -9,15 +9,11 @@ const int TCRT1 = A0;
 const int TCRT2 = A1;
 //Declaração de motores 
 //Motor esquerdo: IN1/IN2 | Motor direito: IN3/IN4 - Adição
-const int IN1 = 10, IN2 = 9;
-const int IN3 = 6, IN4 = 5;
+const int IN1 = 6, IN2 = 9;
+const int IN3 = 10, IN4 = 11;
 //Declarações
 const int LIMIAR_LINHA = 500 //TESTE! - SENSIBILIDADE TCRT 
 const unsigned long ATRASO_INICIO = 5000 //VERIFICADO NO ARQUIVO DE REGRAS 
-//Declaração de motores 
-//Motor esquerdo: IN1/IN2 | Motor direito: IN3/IN4 - Adição
-const int IN1 = 10, IN2 = 9;
-const int IN3 = 6, IN4 = 5;
 // Função padrão
 long lerDistancia(int pinTrig, int pinEcho) {
   digitalWrite(pinTrig, LOW);
