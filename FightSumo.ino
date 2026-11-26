@@ -97,12 +97,12 @@ long lerDistancia(int pinTrig, int pinEcho) {
   delayMicroseconds(10);
   digitalWrite(pinTrig, LOW);
 
-  long duracao = pulseIn(pinEcho, HIGH, TIMEOUT_ECO));
+  long duracao = pulseIn(pinEcho, HIGH, TIMEOUT_ECO);
   if (duracao == 0) return 999;
   return duracao / 58;
 }
 
-bool naBorda(uint8_t pino){
+  bool naBorda(uint8_t pino){
   int v = analogRead(pino);
   return LINHA_ALTA ? (v > LIMIAR_LINHA) : (v < LIMIAR_LINHA);
 }
