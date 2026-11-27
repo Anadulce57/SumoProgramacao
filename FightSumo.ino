@@ -231,6 +231,4 @@ void loop() {
       if (agora - tEstado >= T_GIRO) mudar(BUSCA);
       break;
   }
- 
-  depurar();
 }
