@@ -14,7 +14,11 @@ const unsigned long ATRASO_INICIO = 5000;   // verificado no arquivo de regras
 const long DIST_ATAQUE = 15;            // cm: oponente à frente abaixo disso = atacar
 const unsigned long TIMEOUT_ECO = 6000;     // us (cerca de 1 m); curto para não travar o programa
 const unsigned long INTERVALO_ULTRA = 40;   // ms entre leituras do ultrassônico
- 
+
+//Nova observaação 
+const bool INV_ESQ = true;   // true: inverte o sentido do motor esquerdo
+const bool INV_DIR = true;   // true: inverte o sentido do motor direito
+
 // Velocidades (0 a 255)
 const int VEL_ATAQUE = 255;   // ultrassônico: sempre 255; também é o pico do ataque lateral
 const int VEL_GIRO = 200;
@@ -81,8 +85,8 @@ void motor(uint8_t a, uint8_t b, int vel) {
 }
  
 void mover(int esq, int dir) {
-  motor(IN1, IN2, esq);   // CHECAR SE É ESQUERDA MESMO
-  motor(IN3, IN4, dir);   // CHECAR SE É DIREITA MESMO
+  motor(IN1, IN2, INV_ESQ ? -esq : esq);   
+  motor(IN3, IN4, INV_DIR ? -dir : dir);   
 }
  
 // Gira no lugar: true = esquerda, false = direita
