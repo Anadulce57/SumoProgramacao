@@ -1,4 +1,8 @@
-// ===================== ROBÔ SUMÔ (v4) =====================
+// Estados: ESPERA, BUSCA, BORDA_RE, BORDA_GIRO
+// Ataca a 255 ao notar algo nos sensores laterais (IR) ou frontal (ultrassônico).
+// Desvia ao ver a borda (TCRT).
+
+// ---------- Pinos ----------
 const int TRIG = 8, ECHO = 7;   // ultrassônico frontal
 const int sensorIR1 = 2;        // IR lateral ESQUERDO
 const int sensorIR2 = 3;        // IR lateral DIREITO
@@ -6,39 +10,42 @@ const int TCRT1 = A0;           // linha - frente
 const int TCRT2 = A1;           // linha - trás
 const int IN1 = 6, IN2 = 9;     // motor esquerdo
 const int IN3 = 10, IN4 = 11;   // motor direito
+
 // ---------- Calibração (TESTE) ----------
 const int LIMIAR_LINHA = 500;           // sensibilidade do TCRT
-const bool LINHA_ALTA = true;           // true: linha = valor MAIOR que o limiar; false: inverte
-const int IR_DETECTA = 1;               // nível do IR quando detecta (confirmar no módulo)
-const unsigned long ATRASO_INICIO = 5000;   // verificado no arquivo de regras
-const long DIST_ATAQUE = 15;            // cm: oponente à frente abaixo disso = atacar
+const bool LINHA_ALTA = true;           // true: linha = valor MAIOR que o limiar (como no teste); false: inverte
+const int IR_DETECTA = LOW;             // nível do IR quando detecta (confirmado no teste)
+const long DIST_LIMITE = 10;            // cm: oponente à frente abaixo disso = atacar
 const unsigned long TIMEOUT_ECO = 6000;     // us (cerca de 1 m); curto para não travar o programa
 const unsigned long INTERVALO_ULTRA = 40;   // ms entre leituras do ultrassônico
+const unsigned long ATRASO_INICIO = 5000;   // verificado no arquivo de regras
+
 // Velocidades (0 a 255)
 const int VEL_ATAQUE = 255;   // ultrassônico e IR: sempre 255
 const int VEL_GIRO = 200;
 const int VEL_BUSCA = 120;
 const int VEL_RE = 255;
+
 // Tempos dos estados de borda (ms)
 const unsigned long T_RE = 250;
 const unsigned long T_GIRO = 200;
-// ---------- Previsão de ataque lateral ----------
-const float ALFA = 0.3;                 // peso dos eventos recentes (0 a 1)
-const int MIN_EVENTOS = 5;              // eventos mínimos antes de confiar na previsão
-const float MARGEM = 0.10;              // dentro de 0,5 +- MARGEM, considera empate
-const bool LADO_PADRAO_ESQ = true;      // lado usado sem dados ou em empate
-const unsigned long DEBOUNCE_IR = 150;  // ms: ignora novo evento do mesmo sensor
 
-float pEsq = 0.5;       // probabilidade do próximo ataque vir da ESQUERDA (direita = 1 - pEsq)
-int totalEventos = 0;   // ataques laterais registrados na luta
+// Lado da varredura e do giro depois da borda
+const bool GIRAR_ESQ = true;            // true: esquerda; false: direita
+
+// ---------- Depuração ----------
+const bool DEBUG = true;                // desligue (false) antes de lutar
+const unsigned long INTERVALO_DEBUG = 300;
+unsigned long tDebug = 0;
+
 // ---------- Estado dos sensores ----------
+int readFront = 0, readBack = 0;          // leitura crua dos TCRT (para calibrar)
 bool bFrente = false, bTras = false;      // borda detectada (frente / trás)
 bool irEsq = false, irDir = false;        // IR detectando agora
-bool irEsqAnt = false, irDirAnt = false;  // IR no ciclo anterior
-unsigned long tEvEsq = 0, tEvDir = 0;     // instante do último evento de cada lado
 long distFrente = 999;                    // última distância do ultrassônico (cm)
 bool oponenteFrente = false;
 unsigned long tUltraLeitura = 0;
+
 // ---------- Máquina de estados ----------
 enum Estado {
   ESPERA,
@@ -54,6 +61,7 @@ void mudar(Estado e) {
   estado = e;
   tEstado = millis();
 }
+
 // ---------- Motores ----------
 // vel de -255 a 255: o pino que recebe o PWM define o sentido, o outro fica em 0
 void motor(uint8_t a, uint8_t b, int vel) {
@@ -93,49 +101,20 @@ long lerDistancia(int pinTrig, int pinEcho) {
   return duracao / 58;
 }
 
-bool naBorda(uint8_t pino) {
-  int v = analogRead(pino);
-  return LINHA_ALTA ? (v > LIMIAR_LINHA) : (v < LIMIAR_LINHA);
+bool naBorda(int valor) {
+  return LINHA_ALTA ? (valor > LIMIAR_LINHA) : (valor < LIMIAR_LINHA);
 }
 
 void lerTCRT() {
-  bFrente = naBorda(TCRT1);
-  bTras = naBorda(TCRT2);
+  readFront = analogRead(TCRT1);
+  readBack = analogRead(TCRT2);
+  bFrente = naBorda(readFront);
+  bTras = naBorda(readBack);
 }
 
-// ---------- Previsão ----------
-// Chamada a cada ataque lateral novo. Atualiza a média móvel exponencial.
-void registrarAtaque(bool esquerda) {
-  if (estado == ESPERA) return;  // não conta antes da luta começar
-  float evento = esquerda ? 1.0 : 0.0;
-  pEsq = ALFA * evento + (1.0 - ALFA) * pEsq;
-  totalEventos++;
-}
-
-// true se o próximo ataque tende a vir da esquerda
-bool ladoProvavelEsq() {
-  if (totalEventos < MIN_EVENTOS) return LADO_PADRAO_ESQ;   // poucos dados
-  if (fabs(pEsq - 0.5) < MARGEM) return LADO_PADRAO_ESQ;    // empate
-  return pEsq > 0.5;
-}
-
-// Lê os IR e conta só a TRANSIÇÃO para "detectado" (um ataque = um evento)
 void lerIR() {
-  unsigned long agora = millis();
   irEsq = (digitalRead(sensorIR1) == IR_DETECTA);
   irDir = (digitalRead(sensorIR2) == IR_DETECTA);
-
-  if (irEsq && !irEsqAnt && (agora - tEvEsq > DEBOUNCE_IR)) {
-    registrarAtaque(true);
-    tEvEsq = agora;
-  }
-  if (irDir && !irDirAnt && (agora - tEvDir > DEBOUNCE_IR)) {
-    registrarAtaque(false);
-    tEvDir = agora;
-  }
-
-  irEsqAnt = irEsq;  // atualiza sempre, inclusive em ESPERA
-  irDirAnt = irDir;
 }
 
 // Lê o ultrassônico de tempos em tempos e guarda o último valor
@@ -144,7 +123,32 @@ void lerUltrassonico() {
   if (agora - tUltraLeitura < INTERVALO_ULTRA) return;
   tUltraLeitura = agora;
   distFrente = lerDistancia(TRIG, ECHO);
-  oponenteFrente = (distFrente <= DIST_ATAQUE);
+  oponenteFrente = (distFrente <= DIST_LIMITE);
+}
+
+// Impressão não bloqueante, só para testes
+void depurar() {
+  if (!DEBUG) return;
+  unsigned long agora = millis();
+  if (agora - tDebug < INTERVALO_DEBUG) return;
+  tDebug = agora;
+
+  Serial.print("estado=");
+  Serial.print(estado);   // 0 espera, 1 busca, 2 borda_re, 3 borda_giro
+  Serial.print(" TCRT F/T=");
+  Serial.print(readFront);
+  Serial.print("/");
+  Serial.print(readBack);
+  Serial.print(" borda F/T=");
+  Serial.print(bFrente);
+  Serial.print("/");
+  Serial.print(bTras);
+  Serial.print(" IR E/D=");
+  Serial.print(irEsq);
+  Serial.print("/");
+  Serial.print(irDir);
+  Serial.print(" dist=");
+  Serial.println(distFrente);
 }
 
 // ---------- Programa principal ----------
@@ -183,7 +187,7 @@ void loop() {
       else if (irEsq && irDir) mover(VEL_ATAQUE, VEL_ATAQUE);  // dos dois lados: avança a 255
       else if (irEsq)          atacarLateral(true);            // IR esquerdo: ataca a 255 para a esquerda
       else if (irDir)          atacarLateral(false);           // IR direito: ataca a 255 para a direita
-      else                     girar(ladoProvavelEsq(), VEL_BUSCA);  // varredura pelo lado mais provável
+      else                     girar(GIRAR_ESQ, VEL_BUSCA);    // varredura em lado fixo
       break;
 
     case BORDA_RE:
@@ -193,8 +197,10 @@ void loop() {
       break;
 
     case BORDA_GIRO:
-      girar(ladoProvavelEsq(), VEL_GIRO);       // vira para o lado do ataque mais provável
+      girar(GIRAR_ESQ, VEL_GIRO);               // vira para dentro da arena
       if (agora - tEstado >= T_GIRO) mudar(BUSCA);
       break;
   }
+
+  depurar();
 }
